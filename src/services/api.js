@@ -13,15 +13,15 @@ export const uploadExcelFiles = async (formData, onUploadProgress) => {
   return response.data;
 };
 
-export const downloadReport = async (sessionId) => {
-  const response = await api.get(`/download-report/${sessionId}`, {
+export const downloadReport = async () => {
+  const response = await api.get('/download-report', {
     responseType: 'blob'
   });
   return response.data;
 };
 
-export const fetchAiInsights = async (sessionId) => {
-  const response = await api.get(`/ai-insights/${sessionId}`);
+export const fetchAiInsights = async () => {
+  const response = await api.get('/ai-insights');
   return response.data;
 };
 
