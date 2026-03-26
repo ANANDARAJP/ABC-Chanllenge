@@ -45,24 +45,46 @@ def _normalize_header(header: object) -> str:
 
 def _load_excel(file_obj: BinaryIO, filename: str) -> pd.DataFrame:
     try:
-        df = pd.read_excel(file_obj)
+        # Load without header first to detect the actual header row
+        df_raw = pd.read_excel(file_obj, header=None)
     except ValueError as exc:
         raise ValueError(f'Corrupted or unreadable file: {filename}') from exc
     except Exception as exc:
         raise ValueError(f'Failed to read Excel file: {filename}') from exc
 
-    if df.empty:
+    if df_raw.empty:
         raise ValueError(f'Empty Excel file: {filename}')
-    if df.shape[0] == 0:
-        raise ValueError(f'No data rows found in file: {filename}')
+
+    # Find the header row by looking for 'Invoice number' in the first 20 rows
+    header_idx = 0
+    for i in range(min(20, len(df_raw))):
+        row_values = [str(val).strip().lower() for val in df_raw.iloc[i]]
+        # We use a simple check here, _normalize_header will be used later more strictly
+        if any('invoice' in val and 'number' in val for val in row_values):
+            header_idx = i
+            break
+    
+    # Set the header and data
+    df = df_raw.iloc[header_idx + 1:].copy()
+    df.columns = df_raw.iloc[header_idx]
+    
+    # Reset index and drop completely empty rows
+    df = df.dropna(how='all').reset_index(drop=True)
+
+    if df.empty and header_idx == 0 and len(df_raw) > 0:
+        # If we didn't find a header and the resulting df is empty, 
+        # it might just be a file with only header and no data, or we missed something.
+        pass
 
     return df
+
 
 
 def _prepare_dataframe(df: pd.DataFrame, source_name: str) -> pd.DataFrame:
     normalized_map = {_normalize_header(col): col for col in df.columns}
     if NORMALIZED_INVOICE_COLUMN not in normalized_map:
-        raise ValueError("Required column 'Invoice number' not found in uploaded file")
+        logger.error("Required column 'Invoice number' not found in %s. Found columns: %s", source_name, list(df.columns))
+        raise ValueError(f"Required column 'Invoice number' not found in {source_name}")
 
     invoice_actual_col = normalized_map[NORMALIZED_INVOICE_COLUMN]
     working = df.copy()

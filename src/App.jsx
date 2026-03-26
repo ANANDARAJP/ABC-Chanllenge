@@ -36,6 +36,7 @@ function App() {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [booksFile, setBooksFile] = useState(null);
   const [twoBFile, setTwoBFile] = useState(null);
+  const [sessionId, setSessionId] = useState(null);
   const [uploadProgress, setUploadProgress] = useState({ books: 0, twoB: 0 });
   const [stats, setStats] = useState(initialStats);
   const [insights, setInsights] = useState(fallbackInsights);
@@ -62,8 +63,8 @@ function App() {
     setProcessingProgress(15);
 
     const formData = new FormData();
-    formData.append('booksFile', booksFile);
-    formData.append('twoBFile', twoBFile);
+    formData.append('books_file', booksFile);
+    formData.append('twoB_file', twoBFile);
 
     try {
       const response = await uploadExcelFiles(formData, (progressEvent) => {
@@ -72,14 +73,15 @@ function App() {
         setProcessingProgress(Math.min(80, percent));
       });
 
+      setSessionId(response.session_id);
       setStats({
-        matched: response?.matchedInvoices ?? 128,
-        booksNotIn2B: response?.booksNotIn2B ?? 16,
-        twoBNotInBooks: response?.twoBNotInBooks ?? 10,
-        totalProcessed: response?.totalProcessed ?? 154
+        matched: response?.matched_count ?? 0,
+        booksNotIn2B: response?.books_missing_count ?? 0,
+        twoBNotInBooks: response?.twob_missing_count ?? 0,
+        totalProcessed: (response?.matched_count ?? 0) + (response?.books_missing_count ?? 0)
       });
 
-      const latestInsights = await fetchAiInsights();
+      const latestInsights = await fetchAiInsights(response.session_id);
       setInsights({
         summary:
           latestInsights?.summary ||
@@ -98,7 +100,8 @@ function App() {
       setProcessingProgress(100);
       showToast('Reconciliation completed successfully.');
     } catch (uploadError) {
-      setError(uploadError?.response?.data?.message || 'Reconciliation failed. Please retry.');
+      const detail = uploadError?.response?.data?.detail;
+      setError(detail || uploadError?.response?.data?.message || 'Reconciliation failed. Please retry.');
     } finally {
       setTimeout(() => {
         setLoading(false);
@@ -108,8 +111,12 @@ function App() {
   };
 
   const handleDownload = async () => {
+    if (!sessionId) {
+      setError('No active session. Please reconcile files first.');
+      return;
+    }
     try {
-      const blob = await downloadReport();
+      const blob = await downloadReport(sessionId);
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
